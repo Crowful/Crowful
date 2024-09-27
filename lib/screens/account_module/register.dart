@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
+import 'package:sylviapp_project/Domain/aes_cryptography.dart';
+import 'package:sylviapp_project/providers/providers.dart';
 import 'package:sylviapp_project/widgets/account_module_widgets/register_basic_info.dart';
 import 'package:sylviapp_project/widgets/account_module_widgets/register_password.dart';
 import 'package:sylviapp_project/widgets/account_module_widgets/register_user_email.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 class RegisterPage extends StatefulWidget {
   RegisterPage({Key? key}) : super(key: key);
@@ -25,20 +27,18 @@ class _RegisterPageState extends State<RegisterPage> {
   }
 
   @override
+  void dispose() {
+    registerPageController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final height = MediaQuery.of(context).size.height;
     final width = MediaQuery.of(context).size.width;
 
     return Scaffold(
-        appBar: AppBar(
-          centerTitle: true,
-          title: Text(
-            'Create your account',
-            style: GoogleFonts.sourceSansPro(
-                fontWeight: FontWeight.w700, fontSize: 18),
-          ),
-          elevation: 0,
-        ),
+        resizeToAvoidBottomInset: false,
         body: PageView(
           physics: NeverScrollableScrollPhysics(),
           scrollDirection: Axis.horizontal,
@@ -47,14 +47,14 @@ class _RegisterPageState extends State<RegisterPage> {
             UserRegPage(
               height: height,
               width: width,
-              previousButton: InkWell(
+              previousButton: GestureDetector(
                   onTap: () {
                     registerPageController.animateToPage(
                         registerPageController.page!.toInt() - 1,
                         duration: Duration(milliseconds: 1000),
                         curve: Curves.fastOutSlowIn);
                   },
-                  child: Text('Back')),
+                  child: Icon(Icons.arrow_back_ios, color: Colors.white)),
               nextButton: InkWell(
                   onTap: () {
                     registerPageController.animateToPage(
@@ -62,7 +62,14 @@ class _RegisterPageState extends State<RegisterPage> {
                         duration: Duration(milliseconds: 1000),
                         curve: Curves.fastOutSlowIn);
                   },
-                  child: Center(child: Text('Next'))),
+                  child: Center(
+                      child: Text(
+                    'Next',
+                    style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold),
+                  ))),
             ),
             PasswordRegPage(
               height: height,
@@ -71,15 +78,14 @@ class _RegisterPageState extends State<RegisterPage> {
                   ? SizedBox(
                       width: 0,
                     )
-                  : InkWell(
+                  : GestureDetector(
                       onTap: () {
-                        print(currentPage);
                         registerPageController.animateToPage(
                             registerPageController.page!.toInt() - 1,
                             duration: Duration(milliseconds: 1000),
                             curve: Curves.fastOutSlowIn);
                       },
-                      child: Center(child: Text('Go Back'))),
+                      child: Icon(Icons.arrow_back_ios, color: Colors.white)),
               nextButton: InkWell(
                   onTap: () {
                     registerPageController.animateToPage(
@@ -87,7 +93,14 @@ class _RegisterPageState extends State<RegisterPage> {
                         duration: Duration(milliseconds: 1000),
                         curve: Curves.fastOutSlowIn);
                   },
-                  child: Center(child: Text('Next'))),
+                  child: Center(
+                      child: Text(
+                    'Next',
+                    style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold),
+                  ))),
             ),
             BasicInfoPage(
               height: height,
@@ -96,20 +109,43 @@ class _RegisterPageState extends State<RegisterPage> {
                   ? SizedBox(
                       width: 0,
                     )
-                  : InkWell(
+                  : GestureDetector(
                       onTap: () {
-                        print(currentPage);
                         registerPageController.animateToPage(
                             registerPageController.page!.toInt() - 1,
                             duration: Duration(milliseconds: 1000),
                             curve: Curves.fastOutSlowIn);
                       },
-                      child: Center(child: Text('Go Back'))),
+                      child: Icon(Icons.arrow_back_ios, color: Colors.white)),
               nextButton: InkWell(
                   onTap: () {
-                    Navigator.pushReplacementNamed(context, "/onboarding");
+                    context
+                        .read(authserviceProvider)
+                        .signUp(
+                            context.read(userAccountProvider).getEmail,
+                            context.read(userAccountProvider).getPassword,
+                            AESCryptography().encryptAES(
+                                context.read(userAccountProvider).getFullname),
+                            AESCryptography().encryptAES(
+                                context.read(userAccountProvider).getAddress),
+                            AESCryptography().encryptAES(
+                                context.read(userAccountProvider).getGender),
+                            AESCryptography().encryptAES(
+                                context.read(userAccountProvider).getContact),
+                            AESCryptography().encryptAES(
+                                context.read(userAccountProvider).getUserName),
+                            context)
+                        .whenComplete(() => Navigator.pushNamed(
+                            context, "/wrapperCatchSignup"));
                   },
-                  child: Center(child: Text('Next'))),
+                  child: Center(
+                      child: Text(
+                    'Next',
+                    style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold),
+                  ))),
             )
           ],
         ));

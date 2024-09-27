@@ -1,0 +1,763 @@
+import 'dart:io';
+import 'dart:ui';
+
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_storage/firebase_storage.dart';
+import 'package:flutter/cupertino.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter/painting.dart';
+import 'package:flutter/rendering.dart';
+import 'package:flutter/widgets.dart';
+import 'package:fluttertoast/fluttertoast.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:skeletons/skeletons.dart';
+import 'package:sylviapp_project/Domain/aes_cryptography.dart';
+import 'package:sylviapp_project/providers/providers.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:encrypt/encrypt.dart' as enc;
+import 'package:sylviapp_project/screens/account_module/add_money.dart';
+import 'package:easy_localization/easy_localization.dart';
+import 'package:sylviapp_project/translations/locale_keys.g.dart';
+import 'package:sylviapp_project/widgets/snackbar_widgets/custom_snackbar.dart';
+
+class AccountManagementScreen extends StatefulWidget {
+  final String uid;
+  const AccountManagementScreen({Key? key, required this.uid})
+      : super(key: key);
+  @override
+  _AccountManagementScreenState createState() =>
+      _AccountManagementScreenState();
+}
+
+class _AccountManagementScreenState extends State<AccountManagementScreen> {
+  UploadTask? task;
+  String uploadStatus = "";
+  String? urlTest = "";
+  File? _image;
+
+  TextEditingController fullnameController = TextEditingController();
+  TextEditingController addressController = TextEditingController();
+  TextEditingController emailController = TextEditingController();
+  TextEditingController passwordController = TextEditingController();
+
+  Future getImage() async {
+    var image =
+        // ignore: invalid_use_of_visible_for_testing_member
+        await ImagePicker.platform.pickImage(source: ImageSource.gallery);
+
+    setState(() {
+      _image = File(image!.path);
+      uploadStatus = 'Uploading';
+    });
+  }
+
+  Future uploadPicture(String uid) async {
+    String fileName = "pic";
+    final destination = 'files/users/$uid/verification/validid/$fileName';
+
+    Reference firebaseStorageRef = FirebaseStorage.instance.ref(destination);
+    task = firebaseStorageRef.putFile(_image!);
+
+    final snapshot = await task!.whenComplete(() => {
+          setState(() {
+            uploadStatus = 'Sucessfully Uploaded (Wait for the Confirmation)';
+          })
+        });
+    String urlDownload = await snapshot.ref.getDownloadURL();
+
+    setState(() {
+      urlTest = urlDownload;
+    });
+  }
+
+  String? taske;
+  String? errorText;
+
+  Future showProfile(uid) async {
+    String fileName = "pic";
+    String destination = 'files/users/$uid/ProfilePicture/$fileName';
+    Reference firebaseStorageRef = FirebaseStorage.instance.ref(destination);
+    try {
+      taske = await firebaseStorageRef.getDownloadURL();
+    } catch (e) {
+      setState(() {
+        urlTest = null;
+        errorText = e.toString();
+      });
+    }
+    setState(() {
+      urlTest = taske.toString();
+    });
+  }
+
+  @override
+  void initState() {
+    showProfile(context.read(authserviceProvider).getCurrentUserUID());
+    super.initState();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: Scaffold(
+        body: Container(
+          margin: EdgeInsets.all(10),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.start,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      IconButton(
+                          onPressed: () {
+                            Navigator.pushNamed(context, '/home');
+                          },
+                          icon: Icon(
+                            Icons.arrow_back,
+                            color: Color(0xff65BFB8),
+                          )),
+                      Text(
+                        'Sylviapp',
+                        style: TextStyle(
+                            color: Color(0xff65BFB8),
+                            fontSize: 22,
+                            fontWeight: FontWeight.bold),
+                      ),
+                      IconButton(
+                          onPressed: () {},
+                          icon: Icon(Icons.edit, color: Colors.transparent))
+                    ],
+                  ),
+                ),
+                SizedBox(height: 20),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  mainAxisAlignment: MainAxisAlignment.start,
+                  children: [
+                    Container(
+                      padding: EdgeInsets.fromLTRB(20, 0, 0, 0),
+                      child: urlTest != ""
+                          ? CircleAvatar(
+                              child: Icon(
+                                Icons.person,
+                                color: Colors.red,
+                                size: 40,
+                              ),
+                              backgroundColor: Colors.white,
+                              radius: 30,
+                              foregroundImage: urlTest != "null"
+                                  ? Image.network(
+                                      urlTest.toString(),
+                                      loadingBuilder: (BuildContext context,
+                                          Widget child,
+                                          ImageChunkEvent? loadingProgress) {
+                                        if (loadingProgress == null) {
+                                          return child;
+                                        }
+                                        return Center(
+                                          child: CircularProgressIndicator(
+                                            value: loadingProgress
+                                                        .expectedTotalBytes !=
+                                                    null
+                                                ? loadingProgress
+                                                        .cumulativeBytesLoaded /
+                                                    loadingProgress
+                                                        .expectedTotalBytes!
+                                                : null,
+                                          ),
+                                        );
+                                      },
+                                      errorBuilder: (BuildContext context,
+                                          Object object,
+                                          StackTrace? stacktrace) {
+                                        return Text("handle");
+                                      },
+                                    ).image
+                                  : null)
+                          : Skeleton(
+                              isLoading: true,
+                              skeleton: SkeletonItem(
+                                child: CircleAvatar(
+                                  child: Icon(
+                                    Icons.person,
+                                    color: Colors.red,
+                                    size: 40,
+                                  ),
+                                ),
+                              ),
+                              child: Text('content'),
+                            ),
+                    ),
+                    Wrap(children: [
+                      StreamBuilder<DocumentSnapshot>(
+                          stream: FirebaseFirestore.instance
+                              .collection('users')
+                              .doc(context
+                                  .read(authserviceProvider)
+                                  .getCurrentUserUID())
+                              .snapshots(),
+                          builder: (context, snapshot) {
+                            if (!snapshot.hasData) {
+                              return Container(
+                                  height: 200,
+                                  width: 200,
+                                  child: CircularProgressIndicator());
+                            } else {
+                              var fullname = AESCryptography().decryptAES(
+                                  enc.Encrypted.fromBase64(
+                                      snapshot.data!.get('fullname')));
+
+                              var email = snapshot.data!.get('email');
+
+                              bool isVerify = snapshot.data!.get('isVerify');
+
+                              fullnameController.text = fullname;
+                              emailController.text = email;
+
+                              return Container(
+                                margin: EdgeInsets.fromLTRB(20, 0, 0, 0),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Text(
+                                          fullname,
+                                          style: TextStyle(
+                                              fontWeight: FontWeight.bold,
+                                              fontSize: 20),
+                                        ),
+                                        SizedBox(
+                                          width: 5,
+                                        ),
+                                        isVerify == true
+                                            ? Icon(
+                                                Icons.verified,
+                                                size: 15,
+                                                color: Color(0xff65BFB8),
+                                              )
+                                            : SizedBox()
+                                      ],
+                                    ),
+                                    Text(email,
+                                        style: TextStyle(
+                                            color: Colors.grey,
+                                            fontWeight: FontWeight.w600)),
+                                    isVerify == true
+                                        ? Text(" Organizer",
+                                            style: TextStyle(
+                                                color: Color(0xff65BFB8),
+                                                fontWeight: FontWeight.bold))
+                                        : Text("Volunteer",
+                                            style: TextStyle(
+                                                color: Color(0xff65BFB8),
+                                                fontWeight: FontWeight.bold)),
+                                  ],
+                                ),
+                              );
+                            }
+                          }),
+                    ]),
+                  ],
+                ),
+                SizedBox(
+                  height: 20,
+                ),
+                Container(
+                  padding: EdgeInsets.all(20),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.start,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Dashboard',
+                        style: TextStyle(
+                            color: Colors.grey[500],
+                            fontWeight: FontWeight.w400),
+                      ),
+                      SizedBox(
+                        height: 15,
+                      ),
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        mainAxisAlignment: MainAxisAlignment.start,
+                        children: [
+                          CircleAvatar(
+                            radius: 25,
+                            backgroundColor: Color(0xff65BFB8),
+                            child: IconButton(
+                                onPressed: () {
+                                  Navigator.pushNamed(context, "/edit_profile");
+                                },
+                                icon: Icon(
+                                  Icons.edit,
+                                  color: Colors.white,
+                                  size: 20,
+                                )),
+                          ),
+                          SizedBox(
+                            width: 15,
+                          ),
+                          Align(
+                            alignment: Alignment.center,
+                            child: Text(
+                              LocaleKeys.editprofile.tr(),
+                              style: TextStyle(
+                                  fontSize: 15, fontWeight: FontWeight.w500),
+                            ),
+                          )
+                        ],
+                      ),
+                      SizedBox(
+                        height: 15,
+                      ),
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        mainAxisAlignment: MainAxisAlignment.start,
+                        children: [
+                          CircleAvatar(
+                            radius: 25,
+                            backgroundColor: Color(0xffFF683A),
+                            child: IconButton(
+                                onPressed: () {
+                                  setState(() {
+                                    Navigator.pushNamed(
+                                        context, "/WrapperVerify");
+                                  });
+                                },
+                                icon: Icon(Icons.security,
+                                    size: 20, color: Colors.white)),
+                          ),
+                          SizedBox(
+                            width: 15,
+                          ),
+                          Align(
+                            alignment: Alignment.center,
+                            child: GestureDetector(
+                              onTap: () {
+                                setState(() {
+                                  Navigator.pushNamed(
+                                      context, "/WrapperVerify");
+                                });
+                              },
+                              child: Text(
+                                LocaleKeys.getverified.tr(),
+                                style: TextStyle(
+                                    fontSize: 15, fontWeight: FontWeight.w500),
+                              ),
+                            ),
+                          )
+                        ],
+                      ),
+                      SizedBox(
+                        height: 15,
+                      ),
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        mainAxisAlignment: MainAxisAlignment.start,
+                        children: [
+                          CircleAvatar(
+                            radius: 25,
+                            backgroundColor: Color(0xffFFD337),
+                            child: IconButton(
+                                onPressed: () {
+                                  Navigator.pushNamed(
+                                      context, '/recent_activity');
+                                },
+                                icon: Icon(Icons.restore, color: Colors.white)),
+                          ),
+                          SizedBox(
+                            width: 15,
+                          ),
+                          Align(
+                            alignment: Alignment.center,
+                            child: Text(
+                              LocaleKeys.recentactivity.tr(),
+                              style: TextStyle(
+                                  fontSize: 15, fontWeight: FontWeight.w500),
+                            ),
+                          ),
+                        ],
+                      ),
+                      SizedBox(
+                        height: 15,
+                      ),
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        mainAxisAlignment: MainAxisAlignment.start,
+                        children: [
+                          CircleAvatar(
+                            radius: 25,
+                            backgroundColor: Colors.green,
+                            child: IconButton(
+                                onPressed: () {
+                                  Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                          builder: (context) =>
+                                              AddmoneyScreen()));
+                                },
+                                icon: Icon(Icons.attach_money,
+                                    color: Colors.white)),
+                          ),
+                          SizedBox(
+                            width: 15,
+                          ),
+                          Align(
+                            alignment: Alignment.center,
+                            child: Text(
+                              LocaleKeys.addmoney.tr(),
+                              style: TextStyle(
+                                  fontSize: 15, fontWeight: FontWeight.w500),
+                            ),
+                          ),
+                        ],
+                      ),
+                      SizedBox(
+                        height: 25,
+                      ),
+                      Text(
+                        LocaleKeys.myaccount.tr(),
+                        style: TextStyle(
+                            color: Colors.grey[500],
+                            fontWeight: FontWeight.w400),
+                      ),
+                      SizedBox(
+                        height: 15,
+                      ),
+                      StreamBuilder<QuerySnapshot>(
+                          stream: FirebaseFirestore.instance
+                              .collection('campaigns')
+                              .where('uid',
+                                  isEqualTo: context
+                                      .read(authserviceProvider)
+                                      .getCurrentUserUID())
+                              .snapshots(),
+                          builder: (context, snapshot) {
+                            var numberOfCampaigns = snapshot.hasData
+                                ? snapshot.data!.docs.length
+                                : 0;
+                            return GestureDetector(
+                              onTap: () {
+                                showDialog(
+                                    context: context,
+                                    builder: (BuildContext context) {
+                                      return Container(
+                                          margin: EdgeInsets.fromLTRB(
+                                              20, 200, 20, 300),
+                                          width: 200,
+                                          height: 200,
+                                          child: Card(
+                                            child: Container(
+                                              margin: EdgeInsets.all(20),
+                                              child: Column(
+                                                children: [
+                                                  Text(
+                                                      'Are you sure you want to delete your account?',
+                                                      style: TextStyle(
+                                                          fontSize: 20,
+                                                          fontWeight:
+                                                              FontWeight.bold)),
+                                                  SizedBox(height: 10),
+                                                  Text(
+                                                      '''Note: You cannot delete your account if you're an organizer of current campaign, if not, deleting your account cannot be undone.  ''',
+                                                      style: TextStyle(
+                                                          fontWeight:
+                                                              FontWeight.w300,
+                                                          color: Colors.grey,
+                                                          fontSize: 15)),
+                                                  SizedBox(
+                                                    height: 20,
+                                                  ),
+                                                  Row(
+                                                    mainAxisAlignment:
+                                                        MainAxisAlignment
+                                                            .spaceEvenly,
+                                                    children: [
+                                                      Container(
+                                                        height: 50,
+                                                        width: 120,
+                                                        child: ElevatedButton(
+                                                            style: ButtonStyle(
+                                                                backgroundColor:
+                                                                    MaterialStateProperty
+                                                                        .all(Colors
+                                                                            .redAccent)),
+                                                            onPressed:
+                                                                () async {
+                                                              showDialog(
+                                                                  context:
+                                                                      context,
+                                                                  builder:
+                                                                      (contexto) {
+                                                                    bool
+                                                                        _confirmCredentialsError =
+                                                                        false;
+                                                                    TextEditingController
+                                                                        emailReAuthController =
+                                                                        TextEditingController();
+                                                                    TextEditingController
+                                                                        passwordReAuthController =
+                                                                        TextEditingController();
+                                                                    return StatefulBuilder(builder: ((BuildContext
+                                                                            context,
+                                                                        StateSetter
+                                                                            setState) {
+                                                                      return Container(
+                                                                        margin: EdgeInsets.fromLTRB(
+                                                                            50,
+                                                                            200,
+                                                                            50,
+                                                                            300),
+                                                                        child:
+                                                                            Card(
+                                                                          child:
+                                                                              Container(
+                                                                            margin:
+                                                                                EdgeInsets.all(10),
+                                                                            child:
+                                                                                Column(
+                                                                              mainAxisAlignment: MainAxisAlignment.start,
+                                                                              children: [
+                                                                                Text('Confirm Credentials', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600)),
+                                                                                SizedBox(
+                                                                                  height: 10,
+                                                                                ),
+                                                                                Align(alignment: Alignment.centerLeft, child: Text('Email')),
+                                                                                Container(
+                                                                                  decoration: BoxDecoration(color: Colors.black12, borderRadius: BorderRadius.all(Radius.circular(10))),
+                                                                                  width: double.infinity - 10,
+                                                                                  height: 35,
+                                                                                  padding: EdgeInsets.fromLTRB(10, 0, 10, 0),
+                                                                                  child: TextField(
+                                                                                    decoration: InputDecoration(enabledBorder: InputBorder.none, focusedBorder: InputBorder.none),
+                                                                                    controller: emailReAuthController,
+                                                                                  ),
+                                                                                ),
+                                                                                SizedBox(
+                                                                                  height: 10,
+                                                                                ),
+                                                                                Align(alignment: Alignment.centerLeft, child: Text('Password')),
+                                                                                Container(
+                                                                                  decoration: BoxDecoration(color: Colors.black12, borderRadius: BorderRadius.all(Radius.circular(10))),
+                                                                                  width: double.infinity - 10,
+                                                                                  height: 35,
+                                                                                  padding: EdgeInsets.fromLTRB(10, 0, 10, 0),
+                                                                                  child: TextField(
+                                                                                    decoration: InputDecoration(enabledBorder: InputBorder.none, focusedBorder: InputBorder.none),
+                                                                                    controller: passwordReAuthController,
+                                                                                  ),
+                                                                                ),
+                                                                                SizedBox(
+                                                                                  height: 10,
+                                                                                ),
+                                                                                Visibility(visible: _confirmCredentialsError, child: Align(alignment: Alignment.centerLeft, child: Text('Oops Invalid Input', style: TextStyle(color: Colors.red)))),
+                                                                                SizedBox(
+                                                                                  height: 10,
+                                                                                ),
+                                                                                Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [
+                                                                                  ElevatedButton(
+                                                                                      style: ButtonStyle(backgroundColor: MaterialStateProperty.all(Colors.redAccent)),
+                                                                                      onPressed: () async {
+                                                                                        if (emailReAuthController.text == '' && passwordReAuthController.text == '') {
+                                                                                          print('eto nangyayari');
+                                                                                          setState(() {
+                                                                                            _confirmCredentialsError = true;
+                                                                                          });
+                                                                                        } else {
+                                                                                          print('eto nangyayari 2');
+                                                                                          await context.read(authserviceProvider).deleteAcc(emailReAuthController.text, passwordReAuthController.text, context);
+                                                                                        }
+                                                                                      },
+                                                                                      child: Text('Delete')),
+                                                                                  ElevatedButton(
+                                                                                      style: ButtonStyle(backgroundColor: MaterialStateProperty.all(Color(0xff65BFB8))),
+                                                                                      onPressed: () {
+                                                                                        Navigator.pop(context);
+                                                                                      },
+                                                                                      child: Text('Cancel'))
+                                                                                ])
+                                                                              ],
+                                                                            ),
+                                                                          ),
+                                                                        ),
+                                                                      );
+                                                                    }));
+                                                                  });
+                                                            },
+                                                            child:
+                                                                Text('Delete')),
+                                                      ),
+                                                      Container(
+                                                        height: 50,
+                                                        width: 120,
+                                                        child: ElevatedButton(
+                                                            style: ButtonStyle(
+                                                                backgroundColor:
+                                                                    MaterialStateProperty
+                                                                        .all(Color(
+                                                                            0xff65BFB8))),
+                                                            onPressed: () {
+                                                              Navigator.pop(
+                                                                  context);
+                                                            },
+                                                            child:
+                                                                Text('Cancel')),
+                                                      )
+                                                    ],
+                                                  )
+                                                ],
+                                              ),
+                                            ),
+                                          ));
+                                    });
+                              },
+                              child: Text('Delete Account',
+                                  style: TextStyle(
+                                      color: Colors.orange,
+                                      fontWeight: FontWeight.w500,
+                                      fontSize: 15)),
+                            );
+                          }),
+                      SizedBox(
+                        height: 15,
+                      ),
+                      GestureDetector(
+                        onTap: () {
+                          Navigator.pushNamed(context, "/reset_password");
+                        },
+                        child: Text(LocaleKeys.resetpassword.tr(),
+                            style: TextStyle(
+                                color: Color(0xff65BFB8),
+                                fontWeight: FontWeight.w500,
+                                fontSize: 15)),
+                      ),
+                      SizedBox(
+                        height: 15,
+                      ),
+                      GestureDetector(
+                        onTap: () {
+                          showDialog(
+                              context: context,
+                              builder: (context) {
+                                return Container(
+                                  margin: EdgeInsets.fromLTRB(30, 250, 30, 320),
+                                  child: Card(
+                                    child: Container(
+                                      margin: EdgeInsets.all(10),
+                                      child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              'Are you sure you want to logout?',
+                                              style: TextStyle(
+                                                  fontSize: 21,
+                                                  fontWeight: FontWeight.bold),
+                                            ),
+                                            SizedBox(
+                                              height: 10,
+                                            ),
+                                            Text(
+                                                'this will log out your account to this device. Press yes if you want to log out and no to cancel.',
+                                                style: TextStyle(
+                                                    fontSize: 14,
+                                                    fontWeight: FontWeight.w300,
+                                                    color: Colors.grey)),
+                                            SizedBox(
+                                              height: 10,
+                                            ),
+                                            Row(
+                                              mainAxisAlignment:
+                                                  MainAxisAlignment.spaceEvenly,
+                                              children: [
+                                                ElevatedButton(
+                                                    style: ButtonStyle(
+                                                        backgroundColor:
+                                                            MaterialStateProperty
+                                                                .all(Colors
+                                                                    .redAccent)),
+                                                    onPressed: () async {
+                                                      await context
+                                                          .read(
+                                                              authserviceProvider)
+                                                          .signOut();
+
+                                                      await Navigator.of(
+                                                              context)
+                                                          .pushNamedAndRemoveUntil(
+                                                              '/wrapperAuth',
+                                                              (Route<dynamic>
+                                                                      route) =>
+                                                                  false);
+                                                    },
+                                                    child: Text('logout')),
+                                                ElevatedButton(
+                                                    style: ButtonStyle(
+                                                        backgroundColor:
+                                                            MaterialStateProperty
+                                                                .all(Color(
+                                                                    0xff65BFB8))),
+                                                    onPressed: () {
+                                                      Navigator.pop(context);
+                                                    },
+                                                    child: Text('cancel'))
+                                              ],
+                                            ),
+                                          ]),
+                                    ),
+                                  ),
+                                );
+                              });
+                          // showCupertinoDialog(
+                          //     context: context,
+                          //     builder: (BuildContext context) {
+                          //       return CupertinoAlertDialog(
+                          //         title: Text(
+                          //             "Are You sure you want to log out ?"),
+                          //         content: Text(
+                          //             "this will log out your account in this device"),
+                          //         actions: [
+                          //           CupertinoDialogAction(
+                          //               onPressed: () {
+                          //                 Navigator.pop(context);
+                          //               },
+                          //               child: Text("no")),
+                          //           CupertinoDialogAction(
+                          //               onPressed: () async {
+                          //                 await context
+                          //                     .read(authserviceProvider)
+                          //                     .signOut();
+
+                          //                 await Navigator.of(context)
+                          //                     .pushNamedAndRemoveUntil(
+                          //                         '/wrapperAuth',
+                          //                         (Route<dynamic> route) =>
+                          //                             false);
+                          //               },
+                          //               child: Text("yes")),
+                          //         ],
+                          //       );
+                          //     });
+                        },
+                        child: Text(LocaleKeys.logout.tr(),
+                            style: TextStyle(
+                                color: Colors.red,
+                                fontWeight: FontWeight.w500,
+                                fontSize: 15)),
+                      ),
+                    ],
+                  ),
+                )
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}

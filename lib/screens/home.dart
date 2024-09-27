@@ -1,51 +1,1906 @@
+import 'dart:math';
+import 'dart:ui';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/painting.dart';
+import 'package:flutter/rendering.dart';
+import 'package:flutter/widgets.dart';
+import 'package:fluttertoast/fluttertoast.dart';
+import 'package:lottie/lottie.dart';
+import 'package:skeletons/skeletons.dart';
+import 'package:sylviapp_project/Domain/aes_cryptography.dart';
+import 'package:sylviapp_project/Domain/wrapperisApproved.dart';
+import 'package:sylviapp_project/animation/FadeAnimation.dart';
+import 'package:sylviapp_project/providers/providers.dart';
+import 'package:sylviapp_project/screens/campaign_module/campaign_monitor_organizer.dart';
+import 'package:sylviapp_project/widgets/snackbar_widgets/custom_snackbar.dart';
+import 'analytics_module/bar_graph.dart';
+import 'campaign_module/join_donate.dart';
+import 'package:easy_localization/easy_localization.dart';
+import 'package:sylviapp_project/translations/locale_keys.g.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:encrypt/encrypt.dart' as enc;
 
 class HomePage extends StatefulWidget {
-  const HomePage({Key? key}) : super(key: key);
+  final AnimationController controller;
+  final Duration duration;
+  const HomePage({Key? key, required this.controller, required this.duration})
+      : super(key: key);
 
   @override
   _HomePageState createState() => _HomePageState();
 }
 
-class _HomePageState extends State<HomePage> {
+class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
+  bool isJoin = false;
+  bool isOrganizer = false;
+  String _dropDownValue = 'Active';
+  late final AnimationController _analyticsControllerAnimation;
+
+  String getRandomPicture() {
+    int pickedNumber = Random().nextInt(4);
+    switch (pickedNumber) {
+      case 1:
+        return 'assets/images/plant1.jpg';
+      case 2:
+        return 'assets/images/plant2.jpg';
+      case 3:
+        return 'assets/images/plant3.jpg';
+      case 4:
+        return 'assets/images/placeholder.jpg';
+      default:
+        return 'assets/images/placeholder.jpg';
+    }
+  }
+
+  Stream<QuerySnapshot<Object?>>? getFliterCampaign() {
+    if (_dropDownValue == 'Active') {
+      return FirebaseFirestore.instance
+          .collection('campaigns')
+          .where('isActive', isEqualTo: true)
+          .snapshots();
+    } else if (_dropDownValue == 'Done') {
+      return FirebaseFirestore.instance
+          .collection('campaigns')
+          .where('isCompleted', isEqualTo: true)
+          .snapshots();
+    } else if (_dropDownValue == 'In Progress') {
+      return FirebaseFirestore.instance
+          .collection('campaigns')
+          .where('inProgress', isEqualTo: true)
+          .snapshots();
+    }
+  }
+
+  TextStyle getColorOfTops(place) {
+    if (place == 1) {
+      return TextStyle(
+          fontSize: 18, fontWeight: FontWeight.w800, color: Colors.yellow);
+    } else if (place == 2) {
+      return TextStyle(
+          fontSize: 18, fontWeight: FontWeight.w800, color: Colors.grey);
+    } else if (place == 3) {
+      return TextStyle(
+          fontSize: 18, fontWeight: FontWeight.w800, color: Colors.brown);
+    } else {
+      return TextStyle(
+          fontSize: 18, fontWeight: FontWeight.w800, color: Colors.white);
+    }
+  }
+
+//Animation
+  bool hold = false;
+  bool menuOpen = false;
+  int currentPage = 0;
+  late AnimationController _hide =
+      AnimationController(vsync: this, duration: Duration(milliseconds: 500));
+  late Animation<double> _scaleAnimation =
+      Tween<double>(begin: 1, end: 0.6).animate(widget.controller);
+
+  final PageController homePageController =
+      PageController(initialPage: 0, keepPage: true);
+  @override
+  void initState() {
+    //
+    super.initState();
+
+    _analyticsControllerAnimation = AnimationController(vsync: this);
+    _hide =
+        AnimationController(vsync: this, duration: Duration(milliseconds: 100));
+    _hide.forward();
+    currentPage = 0;
+    homePageController.addListener(() {
+      setState(() {
+        currentPage = homePageController.page!.toInt();
+      });
+    });
+  }
+
+  @override
+  void dispose() {
+    _analyticsControllerAnimation.dispose();
+    homePageController.dispose();
+    _hide.dispose();
+    super.dispose();
+  }
+
+  bool _handleScrollNotification(ScrollNotification notification) {
+    if (notification.depth == 0) {
+      if (notification is UserScrollNotification) {
+        final UserScrollNotification userScroll = notification;
+        switch (userScroll.direction) {
+          case ScrollDirection.forward:
+            _hide.forward();
+            break;
+          case ScrollDirection.reverse:
+            _hide.reverse();
+            break;
+          case ScrollDirection.idle:
+            break;
+        }
+      }
+    }
+    return false;
+  }
+
+  bool noCampaign = false;
   @override
   Widget build(BuildContext context) {
-    var height = MediaQuery.of(context).size.height;
-    var width = MediaQuery.of(context).size.width;
+    _hide.forward();
+    // ignore: unnecessary_null_comparison
+    if (_scaleAnimation == null) {
+      _scaleAnimation =
+          Tween<double>(begin: 1, end: 0.6).animate(widget.controller);
+    }
+
+    var size = MediaQuery.of(context).size;
+    return AnimatedPositioned(
+      duration: widget.duration,
+      top: 0,
+      bottom: menuOpen ? -50 : 0,
+      left: menuOpen ? 0.3 * size.width : 0,
+      right: menuOpen ? -0.4 * size.width : 0,
+      child: ScaleTransition(
+        scale: _scaleAnimation,
+        child: Container(
+          padding: EdgeInsets.all(10),
+          decoration: BoxDecoration(
+              color: Theme.of(context).backgroundColor,
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.2),
+                  spreadRadius: 5,
+                  blurRadius: 10,
+                  offset: Offset(0, 5),
+                ),
+              ],
+              borderRadius: menuOpen
+                  ? BorderRadius.all(Radius.circular(20))
+                  : BorderRadius.all(Radius.circular(0))),
+          child: Scaffold(
+            body: Stack(children: [
+              PageView(
+                  pageSnapping: true,
+                  scrollDirection: Axis.horizontal,
+                  controller: homePageController,
+                  children: [firstHome(), secondHome(), thirdHome()]),
+              FadeAnimation(
+                1.6,
+                Padding(
+                  padding: const EdgeInsets.all(5.0),
+                  child: Align(
+                    alignment: Alignment.bottomCenter,
+                    child: SizeTransition(
+                      sizeFactor: _hide,
+                      child: Card(
+                        color: Colors.transparent,
+                        elevation: 3,
+                        child: Container(
+                          padding: EdgeInsets.fromLTRB(10, 5, 10, 5),
+                          height: 70,
+                          width: double.infinity,
+                          decoration: BoxDecoration(
+                              color: Theme.of(context).dialogBackgroundColor,
+                              borderRadius:
+                                  BorderRadius.all(Radius.circular(10))),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.center,
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              GestureDetector(
+                                onTap: () {
+                                  setState(() {
+                                    currentPage = 0;
+                                  });
+                                  homePageController.jumpToPage(0);
+                                },
+                                child: Stack(
+                                    alignment: Alignment.center,
+                                    children: [
+                                      AnimatedContainer(
+                                        duration: Duration(milliseconds: 300),
+                                        width: currentPage != 0 ? 0 : 100,
+                                        height: 50,
+                                        decoration: BoxDecoration(
+                                            color: Color(0xff65BFB8),
+                                            borderRadius: BorderRadius.all(
+                                                Radius.circular(10))),
+                                        child: Row(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.center,
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.spaceAround,
+                                          children: [
+                                            if (currentPage == 0) ...[
+                                              Flexible(
+                                                child: Wrap(
+                                                  alignment:
+                                                      WrapAlignment.center,
+                                                  crossAxisAlignment:
+                                                      WrapCrossAlignment.center,
+                                                  children: [
+                                                    Icon(
+                                                      Icons.home,
+                                                      color: Colors.white,
+                                                      size: 30,
+                                                    ),
+                                                    SizedBox(
+                                                      width: 8,
+                                                    ),
+                                                    Text(
+                                                      'Home',
+                                                      style: TextStyle(
+                                                          color: Colors.white,
+                                                          fontWeight:
+                                                              FontWeight.w500,
+                                                          fontSize: 15),
+                                                    )
+                                                  ],
+                                                ),
+                                              ),
+                                            ]
+                                          ],
+                                        ),
+                                      ),
+                                      AnimatedOpacity(
+                                        duration: Duration(milliseconds: 150),
+                                        opacity: currentPage != 0 ? 1 : 0,
+                                        child: Icon(
+                                          Icons.home,
+                                          color: Color(0xff65BFB8),
+                                        ),
+                                      ),
+                                    ]),
+                              ),
+                              GestureDetector(
+                                onTap: () {
+                                  setState(() {
+                                    currentPage = 1;
+                                  });
+                                  homePageController.jumpToPage(1);
+                                },
+                                child: Stack(
+                                    alignment: Alignment.center,
+                                    children: [
+                                      AnimatedContainer(
+                                        duration: Duration(milliseconds: 300),
+                                        width: currentPage == 1 ? 120 : 0,
+                                        height: 50,
+                                        decoration: BoxDecoration(
+                                            color: Color(0xff65BFB8),
+                                            borderRadius: BorderRadius.all(
+                                                Radius.circular(10))),
+                                        child: Row(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.center,
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.spaceAround,
+                                          children: [
+                                            if (currentPage == 1) ...[
+                                              Flexible(
+                                                child: Wrap(
+                                                  alignment:
+                                                      WrapAlignment.center,
+                                                  crossAxisAlignment:
+                                                      WrapCrossAlignment.center,
+                                                  children: [
+                                                    Icon(
+                                                      Icons
+                                                          .attach_money_rounded,
+                                                      color: Colors.white,
+                                                      size: 30,
+                                                    ),
+                                                    SizedBox(
+                                                      width: 8,
+                                                    ),
+                                                    Text(
+                                                      'Donate',
+                                                      style: TextStyle(
+                                                          color: Colors.white,
+                                                          fontWeight:
+                                                              FontWeight.w500,
+                                                          fontSize: 15),
+                                                    )
+                                                  ],
+                                                ),
+                                              ),
+                                            ]
+                                          ],
+                                        ),
+                                      ),
+                                      AnimatedOpacity(
+                                        duration: Duration(milliseconds: 500),
+                                        opacity: currentPage != 1 ? 1 : 0,
+                                        child: Icon(
+                                          Icons.monetization_on,
+                                          color: Color(0xff65BFB8),
+                                        ),
+                                      ),
+                                    ]),
+                              ),
+                              GestureDetector(
+                                onTap: () {
+                                  setState(() {
+                                    currentPage = 1;
+                                  });
+                                  homePageController.jumpToPage(2);
+                                },
+                                child: Stack(
+                                    alignment: Alignment.center,
+                                    children: [
+                                      AnimatedContainer(
+                                        duration: Duration(milliseconds: 300),
+                                        width: currentPage == 2 ? 120 : 0,
+                                        height: 50,
+                                        decoration: BoxDecoration(
+                                            color: Color(0xff65BFB8),
+                                            borderRadius: BorderRadius.all(
+                                                Radius.circular(10))),
+                                        child: Row(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.center,
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.spaceAround,
+                                          children: [
+                                            if (currentPage == 2) ...[
+                                              Flexible(
+                                                child: Wrap(
+                                                  alignment:
+                                                      WrapAlignment.center,
+                                                  crossAxisAlignment:
+                                                      WrapCrossAlignment.center,
+                                                  children: [
+                                                    Icon(
+                                                      Icons.analytics,
+                                                      color: Colors.white,
+                                                      size: 30,
+                                                    ),
+                                                    SizedBox(
+                                                      width: 8,
+                                                    ),
+                                                    Text(
+                                                      'Analytics',
+                                                      style: TextStyle(
+                                                          color: Colors.white,
+                                                          fontWeight:
+                                                              FontWeight.w500,
+                                                          fontSize: 15),
+                                                    )
+                                                  ],
+                                                ),
+                                              ),
+                                            ]
+                                          ],
+                                        ),
+                                      ),
+                                      AnimatedOpacity(
+                                        duration: Duration(milliseconds: 500),
+                                        opacity: currentPage != 2 ? 1 : 0,
+                                        child: Icon(
+                                          Icons.analytics,
+                                          color: Color(0xff65BFB8),
+                                        ),
+                                      ),
+                                    ]),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              )
+            ]),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget secondHome() {
+    return Container(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(height: 15),
+          Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+            !menuOpen
+                ? IconButton(
+                    icon: Icon(
+                      Icons.menu,
+                      color: Color(0xff65BFB8),
+                    ),
+                    onPressed: () {
+                      setState(() {
+                        widget.controller.forward();
+                        menuOpen = true;
+                      });
+                    },
+                  )
+                : IconButton(
+                    icon: Icon(
+                      Icons.arrow_back_ios,
+                      color: Color(0xff65BFB8),
+                    ),
+                    onPressed: () {
+                      setState(() {
+                        widget.controller.reverse();
+                        menuOpen = false;
+                      });
+                    },
+                    color: Color(0xff403d55),
+                  ),
+            Text(
+              'Sylviapp',
+              style: TextStyle(
+                  color: Color(0xff65BFB8),
+                  fontSize: 22,
+                  fontWeight: FontWeight.bold),
+            ),
+            IconButton(
+              icon: Icon(Icons.bookmark_outline),
+              onPressed: () {
+                showCupertinoDialog(
+                    context: context,
+                    builder: (BuildContext context) {
+                      return CupertinoAlertDialog(
+                        title: Text("Are You sure you want to log out ?"),
+                        content: Text(
+                            "this will log out your account in this device"),
+                        actions: [
+                          CupertinoDialogAction(
+                              onPressed: () {
+                                Navigator.pop(context);
+                              },
+                              child: Text("no")),
+                          CupertinoDialogAction(
+                              onPressed: () async {
+                                await context
+                                    .read(authserviceProvider)
+                                    .signOut();
+
+                                await Navigator.of(context)
+                                    .pushNamedAndRemoveUntil('/wrapperAuth',
+                                        (Route<dynamic> route) => false);
+                              },
+                              child: Text("yes")),
+                        ],
+                      );
+                    });
+              },
+              color: Colors.transparent,
+            ),
+          ]),
+          SizedBox(height: 15),
+          Padding(
+            padding: const EdgeInsets.all(15.0),
+            child: Column(
+                mainAxisAlignment: MainAxisAlignment.start,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    LocaleKeys.allreforestationcampaign.tr(),
+                    style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 20,
+                        color: Color(0xff65BFB8)),
+                  ),
+                  SizedBox(height: 20),
+                  DropdownButton<String>(
+                    value: _dropDownValue,
+                    icon: Icon(
+                      Icons.filter_list,
+                      color: Color(0xff65BFB8),
+                    ),
+                    items: <String>[
+                      'Active',
+                      'Done',
+                      'In Progress',
+                    ].map((String value) {
+                      return DropdownMenuItem<String>(
+                        value: value,
+                        child: Text(value),
+                      );
+                    }).toList(),
+                    onChanged: (value) {
+                      setState(() {
+                        _dropDownValue = value!;
+                      });
+                    },
+                  ),
+                ]),
+          ),
+          StreamBuilder<QuerySnapshot>(
+              stream: getFliterCampaign(),
+              builder: (context, snapshot) {
+                if (snapshot.hasData) {
+                  return Expanded(
+                      child: NotificationListener(
+                          onNotification: _handleScrollNotification,
+                          child: RefreshIndicator(
+                              onRefresh: () async {},
+                              child: ListView(
+                                  children: snapshot.data!.docs.map((e) {
+                                return StreamBuilder<QuerySnapshot>(
+                                    stream: FirebaseFirestore.instance
+                                        .collection('campaigns')
+                                        .doc(e.id)
+                                        .collection('volunteers')
+                                        .snapshots(),
+                                    builder: (context, snapshotedsd) {
+                                      if (!snapshotedsd.hasData) {
+                                        return Skeleton(
+                                            isLoading: true,
+                                            skeleton: SkeletonItem(
+                                              child: Column(children: [
+                                                Container(
+                                                    height: 130,
+                                                    width:
+                                                        MediaQuery.of(context)
+                                                                .size
+                                                                .width -
+                                                            10,
+                                                    child: Card()),
+                                                Container(
+                                                    height: 130,
+                                                    width:
+                                                        MediaQuery.of(context)
+                                                                .size
+                                                                .width -
+                                                            10,
+                                                    child: Card()),
+                                                Container(
+                                                    height: 130,
+                                                    width:
+                                                        MediaQuery.of(context)
+                                                                .size
+                                                                .width -
+                                                            10,
+                                                    child: Card()),
+                                                Container(
+                                                    height: 130,
+                                                    width:
+                                                        MediaQuery.of(context)
+                                                                .size
+                                                                .width -
+                                                            10,
+                                                    child: Card()),
+                                              ]),
+                                            ),
+                                            child: Text('content'));
+                                      } else {
+                                        return StreamBuilder<DocumentSnapshot>(
+                                            stream: FirebaseFirestore.instance
+                                                .collection('campaigns')
+                                                .doc(e.id)
+                                                .snapshots(),
+                                            builder: (context, snapshotyarn) {
+                                              if (snapshotyarn.hasError &&
+                                                  snapshot.connectionState ==
+                                                      ConnectionState.waiting) {
+                                                return Center(
+                                                    child: Column(
+                                                  mainAxisAlignment:
+                                                      MainAxisAlignment.center,
+                                                  crossAxisAlignment:
+                                                      CrossAxisAlignment.center,
+                                                  children: [
+                                                    CircularProgressIndicator(),
+                                                    Text(
+                                                        'Please Check your Internet',
+                                                        style: TextStyle(
+                                                            fontWeight:
+                                                                FontWeight.bold,
+                                                            color: Colors.grey
+                                                                .withOpacity(
+                                                                    0.7),
+                                                            fontSize: 25))
+                                                  ],
+                                                ));
+                                                // ignore: unrelated_type_equality_checks
+                                              } else {
+                                                return GestureDetector(
+                                                    onTap: () async {
+                                                      try {
+                                                        if (snapshotyarn.data!
+                                                                .get('uid') ==
+                                                            context
+                                                                .read(
+                                                                    authserviceProvider)
+                                                                .getCurrentUserUID()) {
+                                                          setState(() {
+                                                            isOrganizer = true;
+                                                          });
+                                                        } else {
+                                                          setState(() {
+                                                            isOrganizer = false;
+                                                          });
+
+                                                          if (snapshotedsd.data!
+                                                              .docs.isEmpty) {
+                                                            setState(() {
+                                                              isJoin = false;
+                                                            });
+                                                          } else {
+                                                            snapshotedsd
+                                                                .data!.docs
+                                                                .forEach(
+                                                                    (element) {
+                                                              if (context
+                                                                      .read(
+                                                                          authserviceProvider)
+                                                                      .getCurrentUserUID() ==
+                                                                  element.get(
+                                                                      "volunteerUID")) {
+                                                                setState(() {
+                                                                  isJoin = true;
+                                                                });
+                                                              } else if (context
+                                                                      .read(
+                                                                          authserviceProvider)
+                                                                      .getCurrentUserUID() !=
+                                                                  element.get(
+                                                                      "volunteerUID")) {
+                                                                setState(() {
+                                                                  isJoin =
+                                                                      false;
+                                                                });
+                                                              } else {
+                                                                setState(() {
+                                                                  isJoin =
+                                                                      false;
+                                                                });
+                                                              }
+                                                            });
+                                                          }
+                                                        }
+
+                                                        if (isJoin == true &&
+                                                            isOrganizer ==
+                                                                false) {
+                                                          Navigator.push(
+                                                              context,
+                                                              MaterialPageRoute(
+                                                                  builder:
+                                                                      (context) =>
+                                                                          WrapperUsApproved(
+                                                                            campaignID:
+                                                                                e.id,
+                                                                            volunteerUID:
+                                                                                context.read(authserviceProvider).getCurrentUserUID(),
+                                                                          )));
+                                                        } else if (isJoin ==
+                                                                false &&
+                                                            isOrganizer ==
+                                                                false) {
+                                                          if (e.get(
+                                                                  'inProgress') ==
+                                                              true) {
+                                                            CustomSnackBar().showCustomSnackBar(
+                                                                context,
+                                                                Color(
+                                                                    0xff65BFB8),
+                                                                "This Campaign is in Progress",
+                                                                "This campaign is in progress, you can click other campaigns to donate or join. Thank you.");
+                                                          } else if (e.get(
+                                                                  'isCompleted') ==
+                                                              true) {
+                                                            CustomSnackBar().showCustomSnackBar(
+                                                                context,
+                                                                Color(
+                                                                    0xff65BFB8),
+                                                                "This Campaign is already done",
+                                                                "This campaign is not accepting any volunteer nor donation because the campaign was successfully done, Thank you.");
+                                                          } else {
+                                                            Navigator.push(
+                                                                context,
+                                                                MaterialPageRoute(
+                                                                    builder:
+                                                                        (context) =>
+                                                                            JoinDonateCampaign(
+                                                                              uidOfCampaign: e.id,
+                                                                              uidOfOrganizer: e.get("uid"),
+                                                                              nameOfCampaign: e.get("campaign_name"),
+                                                                              city: e.get("city"),
+                                                                              currentFund: e.get("current_donations"),
+                                                                              currentVolunteer: e.get("current_volunteers"),
+                                                                              totalVolunteer: e.get("number_volunteers"),
+                                                                              maxFund: e.get("max_donation"),
+                                                                              address: e.get("address"),
+                                                                              description: e.get("description"),
+                                                                            )));
+                                                          }
+                                                        } else if (isOrganizer ==
+                                                            true) {
+                                                          Navigator.push(
+                                                              context,
+                                                              MaterialPageRoute(
+                                                                  builder:
+                                                                      (context) =>
+                                                                          CampaignMonitorOrganizer(
+                                                                            uidOfCampaign:
+                                                                                e.id,
+                                                                          )));
+                                                        }
+                                                      } catch (e) {}
+                                                    },
+                                                    child: FadeAnimation(
+                                                      (1.0 +
+                                                              snapshot
+                                                                  .data!
+                                                                  .docs
+                                                                  .length) /
+                                                          4,
+                                                      availableCampaign(
+                                                          uid: e['uid'],
+                                                          name: e[
+                                                              'campaign_name'],
+                                                          description:
+                                                              e['description'],
+                                                          rfund: e[
+                                                              'current_donations'],
+                                                          tfund:
+                                                              e['max_donation'],
+                                                          volunteerCurrent: e[
+                                                              'current_volunteers'],
+                                                          volunteerMax: e[
+                                                              'number_volunteers'],
+                                                          campaignPicture: e
+                                                                  .data()
+                                                                  .toString()
+                                                                  .contains(
+                                                                      'header_picture')
+                                                              ? e['header_picture']
+                                                              : 'assets/images/placeholder.jpg'),
+                                                    ));
+                                              }
+                                            });
+                                      }
+                                    });
+                              }).toList()))));
+                } else {
+                  return CircularProgressIndicator();
+                }
+              })
+        ],
+      ),
+    );
+  }
+
+  Widget thirdHome() {
     return SingleChildScrollView(
       child: Container(
-        height: height,
-        width: width,
+        width: MediaQuery.of(context).size.width,
+        height: 2100,
         child: Column(
+          mainAxisAlignment: MainAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            ElevatedButton(
-                onPressed: () {
-                  Navigator.pushNamed(context, "/register");
-                },
-                child: Text('Register')),
-            ElevatedButton(
-                onPressed: () {
-                  Navigator.pushNamed(context, "/settings");
-                },
-                child: Text('Settings')),
-            ElevatedButton(
-                onPressed: () {
-                  Navigator.pushNamed(context, "/basicReg");
-                },
-                child: Text('bsic')),
-                   ElevatedButton(
-                onPressed: () {
-                  Navigator.pushNamed(context, "/forgot_password");
-                },
-                child: Text('Forgotpass')),
-                  ElevatedButton(
-                onPressed: () {
-                  Navigator.pushNamed(context, "/login");
-                },
-                child: Text('login screen'))
+            SizedBox(height: 15),
+            Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+              !menuOpen
+                  ? IconButton(
+                      icon: Icon(
+                        Icons.menu,
+                        color: Color(0xff65BFB8),
+                      ),
+                      onPressed: () {
+                        setState(() {
+                          widget.controller.forward();
+                          menuOpen = true;
+                        });
+                      },
+                    )
+                  : IconButton(
+                      icon: Icon(
+                        Icons.arrow_back_ios,
+                        color: Color(0xff65BFB8),
+                      ),
+                      onPressed: () {
+                        setState(() {
+                          widget.controller.reverse();
+                          menuOpen = false;
+                        });
+                      },
+                      color: Color(0xff403d55),
+                    ),
+              Text(
+                'Sylviapp',
+                style: TextStyle(
+                    color: Color(0xff65BFB8),
+                    fontSize: 22,
+                    fontWeight: FontWeight.bold),
+              ),
+              IconButton(
+                icon: Icon(Icons.bookmark_outline),
+                onPressed: () {},
+                color: Colors.transparent,
+              ),
+            ]),
+            SizedBox(height: 15),
+            Padding(
+              padding: const EdgeInsets.all(15.0),
+              child: Text(
+                LocaleKeys.analyticsinoverallreforestation.tr(),
+                style: Theme.of(context).textTheme.headline1,
+              ),
+            ),
+            StreamBuilder<QuerySnapshot>(
+                stream: FirebaseFirestore.instance
+                    .collection("campaigns")
+                    .where('isActive', isEqualTo: true)
+                    .snapshots(),
+                builder: (context, snapshotAnalyticsActive) {
+                  if (!snapshotAnalyticsActive.hasData) {
+                    return Skeleton(
+                        isLoading: true,
+                        skeleton: SkeletonItem(
+                          child: Column(
+                            children: [
+                              Center(
+                                child: Container(
+                                  height: 200,
+                                  width: 200,
+                                  child: Card(),
+                                ),
+                              ),
+                              Container(
+                                  height: 50,
+                                  width:
+                                      MediaQuery.of(context).size.width - 100,
+                                  child: Card()),
+                              SizedBox(
+                                height: 40,
+                              ),
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Container(
+                                      height: 150, width: 150, child: Card()),
+                                  SizedBox(
+                                    width: 40,
+                                  ),
+                                  Container(
+                                      height: 150, width: 150, child: Card()),
+                                ],
+                              ),
+                              SizedBox(
+                                height: 40,
+                              ),
+                              Container(
+                                  height: 50,
+                                  width: MediaQuery.of(context).size.width - 40,
+                                  child: Card()),
+                              Container(
+                                  height: 50,
+                                  width: MediaQuery.of(context).size.width - 40,
+                                  child: Card()),
+                              Container(
+                                  height: 50,
+                                  width: MediaQuery.of(context).size.width - 40,
+                                  child: Card()),
+                            ],
+                          ),
+                        ),
+                        child: Text('content'));
+                  } else {
+                    return StreamBuilder<QuerySnapshot>(
+                        stream: FirebaseFirestore.instance
+                            .collection("campaigns")
+                            .where('inProgress', isEqualTo: true)
+                            .snapshots(),
+                        builder: (context, snapshotAnalyticsProgress) {
+                          if (!snapshotAnalyticsProgress.hasData) {
+                            return Skeleton(
+                                isLoading: true,
+                                skeleton: SkeletonItem(
+                                  child: Column(
+                                    children: [
+                                      Center(
+                                        child: Container(
+                                          height: 200,
+                                          width: 200,
+                                          child: Card(),
+                                        ),
+                                      ),
+                                      Container(
+                                          height: 50,
+                                          width: MediaQuery.of(context)
+                                                  .size
+                                                  .width -
+                                              100,
+                                          child: Card()),
+                                      SizedBox(
+                                        height: 40,
+                                      ),
+                                      Row(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.center,
+                                        children: [
+                                          Container(
+                                              height: 150,
+                                              width: 150,
+                                              child: Card()),
+                                          SizedBox(
+                                            width: 40,
+                                          ),
+                                          Container(
+                                              height: 150,
+                                              width: 150,
+                                              child: Card()),
+                                        ],
+                                      ),
+                                      SizedBox(
+                                        height: 40,
+                                      ),
+                                      Container(
+                                          height: 50,
+                                          width: MediaQuery.of(context)
+                                                  .size
+                                                  .width -
+                                              40,
+                                          child: Card()),
+                                      Container(
+                                          height: 50,
+                                          width: MediaQuery.of(context)
+                                                  .size
+                                                  .width -
+                                              40,
+                                          child: Card()),
+                                      Container(
+                                          height: 50,
+                                          width: MediaQuery.of(context)
+                                                  .size
+                                                  .width -
+                                              40,
+                                          child: Card()),
+                                    ],
+                                  ),
+                                ),
+                                child: Text('content'));
+                          } else {
+                            return StreamBuilder<QuerySnapshot>(
+                                stream: FirebaseFirestore.instance
+                                    .collection("campaigns")
+                                    .where('isCompleted', isEqualTo: true)
+                                    .snapshots(),
+                                builder: (context, snapshotAnalyticsDone) {
+                                  if (!snapshotAnalyticsDone.hasData) {
+                                    return Skeleton(
+                                        isLoading: true,
+                                        skeleton: SkeletonItem(
+                                          child: Column(
+                                            children: [
+                                              Center(
+                                                child: Container(
+                                                  height: 200,
+                                                  width: 200,
+                                                  child: Card(),
+                                                ),
+                                              ),
+                                              Container(
+                                                  height: 50,
+                                                  width: MediaQuery.of(context)
+                                                          .size
+                                                          .width -
+                                                      100,
+                                                  child: Card()),
+                                              SizedBox(
+                                                height: 40,
+                                              ),
+                                              Row(
+                                                mainAxisAlignment:
+                                                    MainAxisAlignment.center,
+                                                children: [
+                                                  Container(
+                                                      height: 150,
+                                                      width: 150,
+                                                      child: Card()),
+                                                  SizedBox(
+                                                    width: 40,
+                                                  ),
+                                                  Container(
+                                                      height: 150,
+                                                      width: 150,
+                                                      child: Card()),
+                                                ],
+                                              ),
+                                              SizedBox(
+                                                height: 40,
+                                              ),
+                                              Container(
+                                                  height: 50,
+                                                  width: MediaQuery.of(context)
+                                                          .size
+                                                          .width -
+                                                      40,
+                                                  child: Card()),
+                                              Container(
+                                                  height: 50,
+                                                  width: MediaQuery.of(context)
+                                                          .size
+                                                          .width -
+                                                      40,
+                                                  child: Card()),
+                                              Container(
+                                                  height: 50,
+                                                  width: MediaQuery.of(context)
+                                                          .size
+                                                          .width -
+                                                      40,
+                                                  child: Card()),
+                                            ],
+                                          ),
+                                        ),
+                                        child: Text('content'));
+                                  } else {
+                                    int campaignDone =
+                                        snapshotAnalyticsDone.data!.size;
+                                    int campaignInProgress =
+                                        snapshotAnalyticsProgress.data!.size;
+                                    int campaignActive =
+                                        snapshotAnalyticsActive.data!.size;
+                                    return RefreshIndicator(
+                                      onRefresh: () async {},
+                                      child: Container(
+                                          width: double.infinity,
+                                          child: FadeAnimation(
+                                              1,
+                                              Chart(
+                                                campaignInProgress:
+                                                    campaignInProgress,
+                                                doneCampaign: campaignDone,
+                                                activeCampaign: campaignActive,
+                                              ))),
+                                    );
+                                  }
+                                });
+                          }
+                        });
+                  }
+                }),
+            Container(
+              height: 765,
+              padding: EdgeInsets.only(top: 50),
+              child: Column(children: [
+                Text(
+                  'Leaderboard Joined',
+                  style: TextStyle(
+                      fontSize: 30,
+                      color: Color(0xff65BFB8),
+                      fontWeight: FontWeight.bold),
+                ),
+                SizedBox(
+                  height: 50,
+                ),
+                StreamBuilder<QuerySnapshot>(
+                    stream: FirebaseFirestore.instance
+                        .collection('users')
+                        .orderBy('campaignsJoined', descending: true)
+                        .limit(10)
+                        .snapshots(),
+                    builder: (context, snapshot) {
+                      int topplace = 0;
+                      if (snapshot.hasData) {
+                        return Container(
+                          width: MediaQuery.of(context).size.width,
+                          height: 500,
+                          child: ListView(
+                              physics: NeverScrollableScrollPhysics(),
+                              children: snapshot.data!.docs.map((e) {
+                                topplace++;
+                                if (snapshot.data!.docs.isNotEmpty) {
+                                  return Column(children: [
+                                    Container(
+                                      decoration: BoxDecoration(
+                                          color: Color(0xff65BFB8),
+                                          borderRadius: BorderRadius.all(
+                                              Radius.circular(10))),
+                                      height: 150,
+                                      width: MediaQuery.of(context).size.width -
+                                          40,
+                                      child: Container(
+                                        width:
+                                            MediaQuery.of(context).size.width -
+                                                30,
+                                        child: Row(children: [
+                                          Container(
+                                            width: 200,
+                                            child: Column(
+                                                mainAxisAlignment:
+                                                    MainAxisAlignment.start,
+                                                crossAxisAlignment:
+                                                    CrossAxisAlignment.start,
+                                                children: [
+                                                  Container(
+                                                      width: 100,
+                                                      padding:
+                                                          EdgeInsets.fromLTRB(
+                                                              20, 20, 20, 20),
+                                                      child: Text(
+                                                        "Top " +
+                                                            topplace
+                                                                .toString() +
+                                                            " ",
+                                                        style: getColorOfTops(
+                                                            topplace),
+                                                      )),
+                                                  Container(
+                                                    padding:
+                                                        EdgeInsets.fromLTRB(
+                                                            20, 0, 0, 20),
+                                                    width:
+                                                        MediaQuery.of(context)
+                                                                .size
+                                                                .width -
+                                                            50,
+                                                    child: Text(
+                                                      AESCryptography()
+                                                          .decryptAES(
+                                                              enc.Encrypted
+                                                                  .fromBase64(
+                                                        e.get('fullname'),
+                                                      )),
+                                                      style: TextStyle(
+                                                          fontSize: 25,
+                                                          fontWeight:
+                                                              FontWeight.bold,
+                                                          color: Colors.white),
+                                                    ),
+                                                  ),
+                                                  SizedBox(
+                                                    width: 20,
+                                                  ),
+                                                  Container(
+                                                    padding:
+                                                        EdgeInsets.fromLTRB(
+                                                            20, 0, 0, 0),
+                                                    child: Text(
+                                                      e
+                                                              .get(
+                                                                  'campaignsJoined')
+                                                              .toString() +
+                                                          ' Campaign Joined',
+                                                      style: TextStyle(
+                                                          fontSize: 12,
+                                                          fontWeight:
+                                                              FontWeight.w400,
+                                                          color: Colors.white),
+                                                    ),
+                                                  )
+                                                ]),
+                                          ),
+                                          topplace == 1
+                                              ? LottieBuilder.asset(
+                                                  'assets/images/crown.json')
+                                              : Container(),
+                                          topplace == 2
+                                              ? LottieBuilder.asset(
+                                                  'assets/images/silver.json',
+                                                  controller:
+                                                      _analyticsControllerAnimation,
+                                                  onLoaded: (composition) {
+                                                    _analyticsControllerAnimation
+                                                            .duration =
+                                                        composition.duration;
+                                                    _analyticsControllerAnimation
+                                                        .repeat(
+                                                            min: 0.5, max: 0.8);
+                                                  },
+                                                )
+                                              : Container(),
+                                          topplace == 3
+                                              ? LottieBuilder.asset(
+                                                  'assets/images/bronze.json',
+                                                  controller:
+                                                      _analyticsControllerAnimation,
+                                                  onLoaded: (composition) {
+                                                    _analyticsControllerAnimation
+                                                            .duration =
+                                                        composition.duration;
+                                                    _analyticsControllerAnimation
+                                                        .repeat(
+                                                            min: 0.5, max: 0.6);
+                                                  },
+                                                )
+                                              : Container(),
+                                        ]),
+                                      ),
+                                    ),
+                                    SizedBox(
+                                      height: 20,
+                                    ),
+                                  ]);
+                                } else {
+                                  return Text('Nothing to see here');
+                                }
+                              }).toList()),
+                        );
+                      } else {
+                        return Skeleton(
+                            isLoading: true,
+                            skeleton: SkeletonItem(
+                              child: Column(
+                                children: [
+                                  Center(
+                                    child: Container(
+                                      height: 200,
+                                      width: 200,
+                                      child: Card(),
+                                    ),
+                                  ),
+                                  Container(
+                                      height: 50,
+                                      width: MediaQuery.of(context).size.width -
+                                          100,
+                                      child: Card()),
+                                  SizedBox(
+                                    height: 40,
+                                  ),
+                                  Row(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Container(
+                                          height: 150,
+                                          width: 150,
+                                          child: Card()),
+                                      SizedBox(
+                                        width: 40,
+                                      ),
+                                      Container(
+                                          height: 150,
+                                          width: 150,
+                                          child: Card()),
+                                    ],
+                                  ),
+                                  SizedBox(
+                                    height: 40,
+                                  ),
+                                  Container(
+                                      height: 50,
+                                      width: MediaQuery.of(context).size.width -
+                                          40,
+                                      child: Card()),
+                                  Container(
+                                      height: 50,
+                                      width: MediaQuery.of(context).size.width -
+                                          40,
+                                      child: Card()),
+                                  Container(
+                                      height: 50,
+                                      width: MediaQuery.of(context).size.width -
+                                          40,
+                                      child: Card()),
+                                ],
+                              ),
+                            ),
+                            child: Text('content'));
+                      }
+                    }),
+              ]),
+            ),
+            SizedBox(
+              height: 20,
+            ),
+            Container(
+              padding: EdgeInsets.only(top: 0),
+              child: Column(children: [
+                Text(
+                  'Leaderboard Donation',
+                  style: TextStyle(
+                      fontSize: 30,
+                      color: Color(0xff65BFB8),
+                      fontWeight: FontWeight.bold),
+                ),
+                SizedBox(
+                  height: 20,
+                ),
+                StreamBuilder<QuerySnapshot>(
+                    stream: FirebaseFirestore.instance
+                        .collection('users')
+                        .orderBy('overallDonation', descending: true)
+                        .limit(10)
+                        .snapshots(),
+                    builder: (context, snapshot) {
+                      int topplace = 0;
+                      if (snapshot.hasData) {
+                        return Container(
+                          width: MediaQuery.of(context).size.width,
+                          height: 400,
+                          child: ListView(
+                              physics: NeverScrollableScrollPhysics(),
+                              children: snapshot.data!.docs.map((e) {
+                                topplace++;
+                                if (snapshot.data!.docs.isNotEmpty) {
+                                  return Container(
+                                    height: 80,
+                                    width:
+                                        MediaQuery.of(context).size.width - 20,
+                                    child: Card(
+                                      child: Container(
+                                        padding: EdgeInsets.all(10),
+                                        height: 35,
+                                        child: Row(
+                                            mainAxisAlignment:
+                                                MainAxisAlignment.center,
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.center,
+                                            children: [
+                                              Container(
+                                                  width: 60,
+                                                  child: Text("Top " +
+                                                      topplace.toString() +
+                                                      " ")),
+                                              Container(
+                                                width: 130,
+                                                child: Text(AESCryptography()
+                                                    .decryptAES(enc.Encrypted
+                                                        .fromBase64(e
+                                                            .get('fullname')))),
+                                              ),
+                                              SizedBox(
+                                                width: 20,
+                                              ),
+                                              Text('₱ ' +
+                                                  e
+                                                      .get('overallDonation')
+                                                      .toString())
+                                            ]),
+                                      ),
+                                    ),
+                                  );
+                                } else {
+                                  return Text('wala laman');
+                                }
+                              }).toList()),
+                        );
+                      } else {
+                        return Skeleton(
+                            isLoading: true,
+                            skeleton: SkeletonItem(
+                              child: Column(
+                                children: [
+                                  Center(
+                                    child: Container(
+                                      height: 200,
+                                      width: 200,
+                                      child: Card(),
+                                    ),
+                                  ),
+                                  Container(
+                                      height: 50,
+                                      width: MediaQuery.of(context).size.width -
+                                          100,
+                                      child: Card()),
+                                  SizedBox(
+                                    height: 40,
+                                  ),
+                                  Row(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Container(
+                                          height: 150,
+                                          width: 150,
+                                          child: Card()),
+                                      SizedBox(
+                                        width: 40,
+                                      ),
+                                      Container(
+                                          height: 150,
+                                          width: 150,
+                                          child: Card()),
+                                    ],
+                                  ),
+                                  SizedBox(
+                                    height: 40,
+                                  ),
+                                  Container(
+                                      height: 50,
+                                      width: MediaQuery.of(context).size.width -
+                                          40,
+                                      child: Card()),
+                                  Container(
+                                      height: 50,
+                                      width: MediaQuery.of(context).size.width -
+                                          40,
+                                      child: Card()),
+                                  Container(
+                                      height: 50,
+                                      width: MediaQuery.of(context).size.width -
+                                          40,
+                                      child: Card()),
+                                ],
+                              ),
+                            ),
+                            child: Text('content'));
+                      }
+                    }),
+              ]),
+            ),
           ],
         ),
       ),
     );
+
+    // return Column(
+    //   children: [
+    //     Container(height: 250, width: 360, child: BarChartSample3()),
+    //   ],
+    // );
+  }
+
+  Widget firstHome() {
+    return Container(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(height: 15),
+          Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+            !menuOpen
+                ? IconButton(
+                    icon: Icon(
+                      Icons.menu,
+                      color: Color(0xff65BFB8),
+                    ),
+                    onPressed: () {
+                      setState(() {
+                        widget.controller.forward();
+                        menuOpen = true;
+                      });
+                    },
+                  )
+                : IconButton(
+                    icon: Icon(
+                      Icons.arrow_back_ios,
+                      color: Color(0xff65BFB8),
+                    ),
+                    onPressed: () {
+                      setState(() {
+                        widget.controller.reverse();
+                        menuOpen = false;
+                      });
+                    },
+                    color: Color(0xff403d55),
+                  ),
+            Text(
+              'Sylviapp',
+              style: TextStyle(
+                  color: Color(0xff65BFB8),
+                  fontSize: 22,
+                  fontWeight: FontWeight.bold),
+            ),
+            IconButton(
+              icon: Icon(Icons.bookmark_outline),
+              onPressed: () {},
+              color: Colors.transparent,
+            ),
+          ]),
+          SizedBox(height: 15),
+          Container(
+            width: double.infinity,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.start,
+              children: [
+                FadeAnimation(
+                  0.25,
+                  Text(
+                    LocaleKeys.overview.tr(),
+                    style: Theme.of(context).textTheme.headline1,
+                  ),
+                ),
+                SizedBox(
+                  height: 5,
+                ),
+                GestureDetector(
+                  onTap: () {
+                    Navigator.pushNamed(context, '/wrapperMap');
+                  },
+                  child: Center(
+                      child: FadeAnimation(
+                    0.5,
+                    Container(
+                      height: 150,
+                      decoration: BoxDecoration(
+                          color: Colors.black,
+                          borderRadius: BorderRadius.all(Radius.circular(10)),
+                          image: DecorationImage(
+                              colorFilter: ColorFilter.mode(
+                                  Colors.black, BlendMode.dstOver),
+                              image:
+                                  AssetImage("assets/images/versionTwoMap.png"),
+                              fit: BoxFit.cover)),
+                    ),
+                  )),
+                ),
+                SizedBox(
+                  height: 20,
+                ),
+                Text(
+                  LocaleKeys.yourcampaigns.tr(),
+                  style: Theme.of(context).textTheme.headline1,
+                ),
+                SizedBox(
+                  height: 10,
+                )
+              ],
+            ),
+          ),
+          StreamBuilder<QuerySnapshot>(
+              stream: FirebaseFirestore.instance
+                  .collection('users')
+                  .doc(context.read(authserviceProvider).getCurrentUserUID())
+                  .collection("campaigns")
+                  .snapshots(),
+              builder: (context, snapshot) {
+                if (!snapshot.hasData) {
+                  return Skeleton(
+                      isLoading: true,
+                      skeleton: SkeletonItem(
+                        child: Column(children: [
+                          Container(
+                              height: 100,
+                              width: MediaQuery.of(context).size.width - 10,
+                              child: Card()),
+                          Container(
+                              height: 100,
+                              width: MediaQuery.of(context).size.width - 10,
+                              child: Card()),
+                          Container(
+                              height: 100,
+                              width: MediaQuery.of(context).size.width - 10,
+                              child: Card()),
+                          Container(
+                              height: 100,
+                              width: MediaQuery.of(context).size.width - 10,
+                              child: Card()),
+                        ]),
+                      ),
+                      child: Text('content'));
+                } else if (snapshot.data!.docs.isEmpty) {
+                  return FadeAnimation(
+                    1,
+                    Container(
+                      margin: EdgeInsets.fromLTRB(0, 100, 0, 0),
+                      child: Center(
+                          child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.sentiment_dissatisfied,
+                              size: 30, color: Colors.grey.withOpacity(0.7)),
+                          SizedBox(
+                            width: 10,
+                          ),
+                          Text('No Active Campaign',
+                              style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.grey.withOpacity(0.7),
+                                  fontSize: 25)),
+                        ],
+                      )),
+                    ),
+                  );
+                } else {
+                  return Expanded(
+                    child: NotificationListener(
+                      child: noCampaign == true
+                          ? FadeAnimation(
+                              1,
+                              Center(
+                                  child: Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(Icons.sentiment_dissatisfied,
+                                      size: 30,
+                                      color: Colors.grey.withOpacity(0.7)),
+                                  SizedBox(
+                                    width: 10,
+                                  ),
+                                  Text('No Active Campaign',
+                                      style: TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          color: Colors.grey.withOpacity(0.7),
+                                          fontSize: 25)),
+                                ],
+                              )),
+                            )
+                          : RefreshIndicator(
+                              onRefresh: () async {},
+                              child: ListView(
+                                  children: snapshot.data!.docs.map((e) {
+                                return StreamBuilder<DocumentSnapshot>(
+                                    stream: FirebaseFirestore.instance
+                                        .collection("campaigns")
+                                        .doc(e.id)
+                                        .collection("volunteers")
+                                        .doc(context
+                                            .read(authserviceProvider)
+                                            .getCurrentUserUID())
+                                        .parent
+                                        .parent!
+                                        .snapshots(),
+                                    builder: (context, snapshoteds) {
+                                      if (!snapshoteds.hasData &&
+                                          snapshoteds.connectionState ==
+                                              ConnectionState.waiting) {
+                                        return CircularProgressIndicator();
+                                      } else {
+                                        if (snapshoteds.data!.exists) {
+                                          return GestureDetector(
+                                              onTap: () {
+                                                if (context
+                                                        .read(
+                                                            authserviceProvider)
+                                                        .getCurrentUserUID() ==
+                                                    snapshoteds.data!
+                                                        .get('uid')) {
+                                                  Navigator.push(
+                                                      context,
+                                                      MaterialPageRoute(
+                                                          builder: (context) =>
+                                                              CampaignMonitorOrganizer(
+                                                                  uidOfCampaign:
+                                                                      snapshoteds
+                                                                          .data!
+                                                                          .id)));
+                                                } else {
+                                                  Navigator.push(
+                                                      context,
+                                                      MaterialPageRoute(
+                                                          builder: (context) =>
+                                                              WrapperUsApproved(
+                                                                campaignID:
+                                                                    e.id,
+                                                                volunteerUID: context
+                                                                    .read(
+                                                                        authserviceProvider)
+                                                                    .getCurrentUserUID(),
+                                                              )));
+                                                }
+                                              },
+                                              child: FadeAnimation(
+                                                  (1.0 + snapshot.data!.docs.length) /
+                                                      4,
+                                                  availableCampaign(
+                                                      uid: snapshoteds.data!
+                                                          .get("uid"),
+                                                      name: snapshoteds.data!
+                                                          .get("campaign_name"),
+                                                      description: snapshoteds.data!
+                                                          .get("description"),
+                                                      rfund: snapshoteds.data!.get(
+                                                          "current_donations"),
+                                                      tfund: snapshoteds.data!
+                                                          .get("max_donation"),
+                                                      volunteerCurrent: snapshoteds.data!.get(
+                                                          "current_volunteers"),
+                                                      volunteerMax: snapshoteds.data!.get(
+                                                          "number_volunteers"),
+                                                      campaignPicture: e
+                                                              .data()
+                                                              .toString()
+                                                              .contains('header_picture')
+                                                          ? e['header_picture']
+                                                          : 'assets/images/placeholder.jpg')));
+                                        } else {
+                                          return Center(
+                                            child: Container(
+                                              height: 100,
+                                              width: 400,
+                                              child: Card(
+                                                child: Column(children: [
+                                                  Text(
+                                                      'This Campaign has been deleted by the Admin'),
+                                                  ElevatedButton(
+                                                      onPressed: () {
+                                                        context
+                                                            .read(
+                                                                authserviceProvider)
+                                                            .deleteRecentCampaign(
+                                                                snapshoteds
+                                                                    .data!.id,
+                                                                context
+                                                                    .read(
+                                                                        authserviceProvider)
+                                                                    .getCurrentUserUID(),
+                                                                context);
+                                                      },
+                                                      child: Text('remove')),
+                                                ]),
+                                              ),
+                                            ),
+                                          );
+                                        }
+                                      }
+                                    });
+                              }).toList()),
+                            ),
+                      onNotification: _handleScrollNotification,
+                    ),
+                  );
+                }
+              })
+        ],
+      ),
+    );
+  }
+
+  Widget availableCampaign(
+      {String? name,
+      required String description,
+      required String uid,
+      required int rfund,
+      required int tfund,
+      required int volunteerCurrent,
+      required int volunteerMax,
+      required String campaignPicture}) {
+    String? aydee = FirebaseAuth.instance.currentUser!.uid;
+
+    double meterValue = rfund / tfund;
+
+    int raisedFund = rfund;
+    int totalFund = tfund;
+    return Container(
+        padding: EdgeInsets.all(10),
+        margin: EdgeInsets.only(bottom: 15),
+        decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(7.5),
+            color: Theme.of(context).dialogBackgroundColor,
+            boxShadow: [
+              BoxShadow(
+                color: Colors.grey.withOpacity(0.7),
+                spreadRadius: 0,
+                blurRadius: 2,
+                offset: Offset(0, 5),
+              ),
+            ]),
+        child: Column(
+          children: [
+            Stack(children: [
+              Container(
+                height: 100,
+                width: double.infinity,
+                decoration: BoxDecoration(
+                    borderRadius: BorderRadius.only(
+                        topLeft: Radius.circular(7.5),
+                        topRight: Radius.circular(7.5)),
+                    image: DecorationImage(
+                        image: AssetImage(campaignPicture), fit: BoxFit.cover)),
+              ),
+              uid == aydee
+                  ? Padding(
+                      padding: EdgeInsets.all(5),
+                      child: Text('You are the Organizer here',
+                          style: TextStyle(color: Colors.white)))
+                  : Padding(
+                      padding: EdgeInsets.all(5),
+                      child: Icon(
+                        Icons.ac_unit,
+                        color: Colors.transparent,
+                      ))
+            ]),
+            SizedBox(width: 10),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.start,
+              children: <Widget>[
+                Container(
+                  margin: EdgeInsets.fromLTRB(0, 5, 0, 5),
+                  child: Text(name!,
+                      style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xff65BFB8))),
+                ),
+                Container(
+                  child: Text(description,
+                      style: TextStyle(
+                        fontSize: 14,
+                        overflow: TextOverflow.clip,
+                        fontWeight: FontWeight.normal,
+                      )),
+                ),
+                SizedBox(
+                  height: 10,
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(5, 0, 0, 0),
+                  child: Text(
+                    '₱' +
+                        raisedFund.toString() +
+                        ' raised of ' +
+                        '₱' +
+                        totalFund.toString(),
+                    style: TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(5, 0, 5, 5),
+                  child: Container(
+                    height: 15,
+                    decoration: BoxDecoration(
+                        borderRadius: BorderRadius.all(Radius.circular(20))),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.all(Radius.circular(20)),
+                      child: LinearProgressIndicator(
+                        semanticsLabel: "Donated",
+                        semanticsValue: "Donating",
+                        backgroundColor: Colors.grey.withOpacity(0.3),
+                        color: Color(0xff65BFB8),
+                        minHeight: 10,
+                        value: meterValue,
+                      ),
+                    ),
+                  ),
+                ),
+                Align(
+                  alignment: Alignment.bottomRight,
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(
+                            Icons.people_alt,
+                            color: Color(0xff65BFB8),
+                            size: 20,
+                          ),
+                          SizedBox(
+                            width: 5,
+                          ),
+                          Text(volunteerCurrent.toString() +
+                              '/' +
+                              volunteerMax.toString())
+                        ],
+                      ),
+                      SizedBox(
+                        width: 10,
+                      ),
+                      Row(
+                        children: [
+                          Icon(
+                            Icons.paid,
+                            color: Color(0xff65BFB8),
+                            size: 20,
+                          ),
+                          SizedBox(
+                            width: 5,
+                          ),
+                          Text('₱' + raisedFund.toString())
+                        ],
+                      ),
+                    ],
+                  ),
+                )
+              ],
+            ),
+          ],
+        ));
   }
 }
